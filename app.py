@@ -221,10 +221,14 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
             
-            msg = await update.message.reply_text(f"🔍 جاري فحص الملف: {file_name}...")
+            wait_msg = await update.message.reply_text(
+                f"🔍 جاري فحص الملف: {file_name}...\n"
+                "⏳ يرجى الانتظار 20 ثانية على الأقل"
+            )
+            
             result = await analyze_file(file_content.read(), file_name)
             report = generate_file_report(result, file_name)
-            await msg.edit_text(report, parse_mode="Markdown")
+            await wait_msg.edit_text(report, parse_mode="Markdown")
             return
         
         # إذا كان نص (رابط محتمل)
@@ -239,13 +243,8 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
             
-            # إعلام المستخدم بالرابط المعدل ووقت الانتظار
-            clean_msg = ""
-            if url != original_input.replace(" ", ""):
-                clean_msg = f"🔗 تم تعديل الرابط للفحص:\n{url}\n\n"
-            
             wait_msg = await update.message.reply_text(
-                f"{clean_msg}🔍 جاري فحص الرابط...\n"
+                "🔍 جاري فحص الرابط...\n"
                 "⏳ يرجى الانتظار 20 ثانية على الأقل"
             )
             
@@ -262,7 +261,7 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         error_msg = (
             "❌ حدث خطأ أثناء الفحص\n"
             "قد يكون بسبب:\n"
-            "- رابط غير صالح\n"
+            "- رابط/ملف غير صالح\n"
             "- مشكلة في اتصال API\n"
             "- محتوى غير مدعوم\n\n"
             "الرجاء المحاولة لاحقاً أو إرسال رابط/ملف آخر"
