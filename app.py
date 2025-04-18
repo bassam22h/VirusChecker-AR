@@ -10,7 +10,6 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 app = Flask(__name__)
 
-# تهيئة البوت والتطبيق في البداية
 bot = Bot(BOT_TOKEN)
 application = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -71,20 +70,17 @@ def webhook():
     application.update_queue.put_nowait(update)
     return "ok", 200
 
-# تعيين Webhook
-@app.route('/setwebhook', methods=['GET'])
-def set_webhook():
-    webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
-    success = bot.set_webhook(url=webhook_url)
-    if success:
-        return f"تم تعيين Webhook: {webhook_url}", 200
-    else:
-        return "فشل تعيين Webhook", 400
-
-# تشغيل التطبيق
+# تشغيل التطبيق مع تعيين Webhook تلقائي
 if __name__ == '__main__':
+    webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
+    set_webhook = bot.set_webhook(url=webhook_url)
+    if set_webhook:
+        print(f"تم تعيين Webhook بنجاح: {webhook_url}")
+    else:
+        print("فشل تعيين Webhook.")
+
     application.run_webhook(
         listen="0.0.0.0",
         port=10000,
-        webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
+        webhook_url=webhook_url
     )
