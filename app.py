@@ -30,22 +30,35 @@ async def send_typing_action(update: Update):
     except:
         pass
 
-def extract_url(text: str) -> str:
-    """استخراج الروابط من النص"""
+def extract_and_clean_url(text: str) -> str:
+    """
+    استخراج وتنظيف الروابط من النص
+    يحل مشكلة المسافات في الروابط التي تسبب نتائج غير صحيحة
+    """
     try:
         # فك تشفير URL إن وجد
         decoded_text = urllib.parse.unquote(text)
         
-        # إزالة المسافات من الروابط
-        fixed_text = decoded_text.replace(" ", "").replace("٫", ".").replace("۔", ".")
+        # إزالة جميع المسافات من النص أولاً
+        no_spaces_text = decoded_text.replace(" ", "")
         
         # البحث عن الروابط
         url_pattern = re.compile(
             r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
         )
-        match = url_pattern.search(fixed_text)
-        return match.group(0) if match else None
-    except:
+        match = url_pattern.search(no_spaces_text)
+        
+        if not match:
+            return None
+            
+        # تنظيف الرابط النهائي من أي أحرف غير صالحة
+        cleaned_url = match.group(0)
+        cleaned_url = cleaned_url.split(' ')[0]  # إزالة أي مسافات لاحقة
+        cleaned_url = cleaned_url.split('\n')[0]  # إزالة أي أسطر جديدة
+        
+        return cleaned_url
+    except Exception as e:
+        print(f"Error extracting URL: {str(e)}")
         return None
 
 def is_valid_file(file_name: str) -> bool:
@@ -60,64 +73,61 @@ async def analyze_url(url: str) -> dict:
     """تحليل الرابط باستخدام VirusTotal"""
     headers = {"x-apikey": VIRUSTOTAL_API_KEY}
     
-    # إرسال الرابط للتحليل
-    response = requests.post(
-        "https://www.virustotal.com/api/v3/urls",
-        headers=headers,
-        data={"url": url},
-        timeout=20
-    )
-    
-    if response.status_code != 200:
-        raise Exception("فشل في تحليل الرابط")
-    
-    analysis_id = response.json()["data"]["id"]
-    
-    # الانتظار قليلاً لضمان اكتمال التحليل
-    time.sleep(15)
-    
-    # جلب النتائج
-    analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
-    result = requests.get(analysis_url, headers=headers, timeout=20)
-    
-    if result.status_code != 200:
-        raise Exception("فشل في جلب النتائج")
-    
-    return result.json()
-
-async def analyze_file(file_content: bytes, file_name: str) -> dict:
-    """تحليل الملف باستخدام VirusTotal"""
-    headers = {"x-apikey": VIRUSTOTAL_API_KEY}
-    
-    # إرسال الملف للتحليل
-    files = {"file": (file_name, file_content)}
-    response = requests.post(
-        "https://www.virustotal.com/api/v3/files",
-        headers=headers,
-        files=files,
-        timeout=30
-    )
-    
-    if response.status_code != 200:
-        raise Exception("فشل في تحليل الملف")
-    
-    analysis_id = response.json()["data"]["id"]
-    
-    # الانتظار لضمان اكتمال التحليل
-    time.sleep(20)
-    
-    # جلب النتائج
-    analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
-    result = requests.get(analysis_url, headers=headers, timeout=20)
-    
-    if result.status_code != 200:
-        raise Exception("فشل في جلب نتائج الملف")
-    
-    return result.json()
+    try:
+        # إرسال الرابط للتحليل
+        response = requests.post(
+            "https://www.virustotal.com/api/v3/urls",
+            headers=headers,
+            data={"url": url},
+            timeout=25
+        )
+        
+        if response.status_code != 200:
+            print(f"VirusTotal API Error (submit): {response.status_code} - {response.text}")
+            raise Exception("فشل في تحليل الرابط")
+        
+        analysis_id = response.json()["data"]["id"]
+        
+        # الانتظار لضمان اكتمال التحليل (زيادة وقت الانتظار)
+        time.sleep(20)
+        
+        # جلب النتائج
+        analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
+        result = requests.get(analysis_url, headers=headers, timeout=25)
+        
+        if result.status_code != 200:
+            print(f"VirusTotal API Error (results): {result.status_code} - {result.text}")
+            raise Exception("فشل في جلب النتائج")
+        
+        # التحقق من اكتمال التحليل
+        if result.json()["data"]["attributes"]["status"] != "completed":
+            raise Exception("التحليل لم يكتمل بعد")
+        
+        return result.json()
+    except Exception as e:
+        print(f"Analysis Error: {str(e)}")
+        raise
 
 # ================ توليد التقارير ================
-def generate_url_report(result: dict, url: str) -> str:
-    """تقرير فحص الرابط"""
+def translate_threat(threat: str) -> str:
+    """ترجمة أنواع التهديدات إلى العربية"""
+    threat_translations = {
+        "malicious": "برمجيات خبيثة",
+        "phishing": "تصيد احتيالي",
+        "malware": "برمجيات ضارة",
+        "suspicious": "مشبوه",
+        "riskware": "برمجيات خطرة",
+        "trojan": "حصان طروادة",
+        "adware": "برمجيات إعلانية",
+        "spyware": "برمجيات تجسسية",
+        "ransomware": "برمجيات فدية",
+        "worm": "دودة حاسوبية",
+        "virus": "فيروس"
+    }
+    return threat_translations.get(threat.lower(), threat)
+
+def generate_url_report(result: dict, original_url: str) -> str:
+    """تقرير فحص الرابط مع الترجمة"""
     stats = result["data"]["attributes"]["stats"]
     results = result["data"]["attributes"]["results"]
     
@@ -126,14 +136,15 @@ def generate_url_report(result: dict, url: str) -> str:
     harmless = stats["harmless"]
     undetected = stats["undetected"]
     
-    # تحضير قائمة التهديدات
+    # تحضير قائمة التهديدات مترجمة
     threats = []
     for engine, data in results.items():
         if data["category"] in ["malicious", "suspicious"]:
-            threats.append(f"▫️ {engine}: {data['result']} ({data['category']})")
+            threat_type = translate_threat(data.get("result", "unknown"))
+            threats.append(f"▫️ *{engine}*: {threat_type} ({data['category']})")
     
     # بناء التقرير
-    report = f"🔍 *نتيجة فحص الرابط*\n\n[{url}]({url})\n\n"
+    report = f"🔍 *نتيجة فحص الرابط*\n\n[{original_url}]({original_url})\n\n"
     report += f"🛡 *الحالة:* {'⚠️ خطير' if malicious > 0 else '✅ آمن'}\n\n"
     report += f"• 🚨 ضار: {malicious} محرك\n"
     report += f"• 🟡 مشبوه: {suspicious} محرك\n"
@@ -142,77 +153,50 @@ def generate_url_report(result: dict, url: str) -> str:
     
     if threats:
         report += "📌 *التهديدات المكتشفة:*\n"
-        report += "\n".join(threats[:5])  # عرض أول 5 تهديدات
-        if len(threats) > 5:
-            report += f"\n\nو {len(threats)-5} تهديدات أخرى..."
+        report += "\n".join(threats[:7])  # عرض أول 7 تهديدات
+        if len(threats) > 7:
+            report += f"\n\nو {len(threats)-7} تحذيرات أخرى..."
     
     report += "\n\n📊 *نصائح أمانية:*\n"
-    if malicious > 3:
-        report += "▪️ لا تفتح هذا الرابط\n▪️ لا تدخل أي بيانات شخصية\n▪️ احذف الرسالة فوراً"
+    if malicious >= 3:
+        report += "▪️ هذا الرابط خطير جداً!\n"
+        report += "▪️ لا تفتحه بأي حال\n"
+        report += "▪️ قد يحتوي على برمجيات خبيثة أو صفحات تصيد\n"
+        report += "▪️ احذف الرسالة فوراً"
     elif malicious > 0:
-        report += "▪️ تجنب فتح الرابط\n▪️ لا تقم بتنزيل أي ملفات\n▪️ استخدم متصفحاً آمناً"
+        report += "▪️ الرابط يحتوي على تهديدات محتملة\n"
+        report += "▪️ تجنب فتحه أو إدخال أي بيانات\n"
+        report += "▪️ استخدم متصفحاً آمناً إذا كنت مضطراً"
     else:
-        report += "▪️ الرابط يبدو آمناً\n▪️ كن حذراً عند إدخال بيانات حساسة"
+        report += "▪️ الرابط يبدو آمناً حسب الفحص الحالي\n"
+        report += "▪️ مع ذلك كن حذراً عند إدخال بيانات حساسة"
     
-    return report
-
-def generate_file_report(result: dict, file_name: str) -> str:
-    """تقرير فحص الملف"""
-    stats = result["data"]["attributes"]["stats"]
-    results = result["data"]["attributes"]["results"]
-    
-    malicious = stats["malicious"]
-    suspicious = stats["suspicious"]
-    
-    # تحضير قائمة التهديدات
-    threats = []
-    for engine, data in results.items():
-        if data["category"] in ["malicious", "suspicious"]:
-            threats.append(f"▫️ {engine}: {data['result']} ({data['category']})")
-    
-    # بناء التقرير
-    report = f"📁 *نتيجة فحص الملف*\n\n*{file_name}*\n\n"
-    report += f"🛡 *الحالة:* {'⚠️ خطير' if malicious > 0 else '✅ آمن'}\n\n"
-    report += f"• 🚨 ضار: {malicious} محرك\n"
-    report += f"• 🟡 مشبوه: {suspicious} محرك\n\n"
-    
-    if threats:
-        report += "📌 *التهديدات المكتشفة:*\n"
-        report += "\n".join(threats[:5])
-        if len(threats) > 5:
-            report += f"\n\nو {len(threats)-5} تهديدات أخرى..."
-    
-    report += "\n\n📊 *نصائح أمانية:*\n"
-    if malicious > 3:
-        report += "▪️ لا تقم بتشغيل الملف\n▪️ احذف الملف فوراً\n▪️ افحص جهازك بمضاد فيروسات"
-    elif malicious > 0:
-        report += "▪️ تجنب تشغيل الملف\n▪️ استخدم بيئة معزولة\n▪️ تأكد من مصدر الملف"
-    else:
-        report += "▪️ الملف يبدو آمناً\n▪️ تأكد من مصدر الملف قبل التشغيل"
-    
+    report += "\n\nℹ️ النتائج من VirusTotal وقد تتغير مع الوقت"
     return report
 
 # ================ معالجة الرسائل ================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """رسالة البدء"""
+    """رسالة البدء المعدلة"""
     await send_typing_action(update)
     
     welcome_msg = """
-🛡 *مرحباً بك في بوت فحص الروابط والملفات*
+🛡 *مرحباً بك في بوت فحص الروابط المتقدم*
 
 📌 *كيفية الاستخدام:*
-1. أرسل أي رابط مباشرة وسأفحصه لك
-2. أو أرسل ملفاً (حتى 50MB) وسأحلله
+1. أرسل أي رابط مباشرة (حتى مع مسافات بين الأحرف)
+2. سأفحصه وأعطيك تقريراً مفصلاً
 
-🔍 *الملفات المدعومة:*
-PDF, EXE, DOC, APK, ZIP وغيرها
+⚠️ *لأفضل نتائج:*
+- تأكد من إزالة أي مسافات قبل وبعد الرابط
+- تجنب إرسال روابط مختصرة (استخدم unshorten.it لتفكيكها أولاً)
+- بعض الروابط قد يتم حظرها من تليجرام
 
-⚠️ *ملاحظة:* بعض الروابط قد يتم حظرها تلقائياً من تليجرام. في هذه الحالة جرب إرسال الرابط مع مسافات بين الأحرف.
+📁 يمكنك أيضاً إرسال ملفات للفحص (PDF, EXE, ZIP...) حتى 50MB
 """
-    await update.message.reply_text(welcome_msg, parse_mode="Markdown")
+    await update.message.reply_text(welcome_msg, parse_mode="Markdown", disable_web_page_preview=True)
 
 async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة المدخلات من المستخدم"""
+    """معالجة المدخلات مع تحسينات جديدة"""
     try:
         await send_typing_action(update)
         
@@ -229,50 +213,58 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
             
-            # إعلام المستخدم ببدء الفحص
             msg = await update.message.reply_text(f"🔍 جاري فحص الملف: {file_name}...")
-            
-            # تحليل الملف
             result = await analyze_file(file_content.read(), file_name)
-            
-            # إنشاء التقرير
             report = generate_file_report(result, file_name)
-            
-            # إرسال النتائج
             await msg.edit_text(report, parse_mode="Markdown")
             return
         
         # إذا كان نص (رابط محتمل)
         if update.message.text:
-            url = extract_url(update.message.text)
-            if url:
-                # إعلام المستخدم ببدء الفحص
-                msg = await update.message.reply_text(f"🔍 جاري فحص الرابط:\n{url}...")
-                
-                # تحليل الرابط
-                result = await analyze_url(url)
-                
-                # إنشاء التقرير
-                report = generate_url_report(result, url)
-                
-                # إرسال النتائج
-                await msg.edit_text(report, parse_mode="Markdown")
+            original_input = update.message.text.strip()
+            url = extract_and_clean_url(original_input)
+            
+            if not url:
+                await update.message.reply_text(
+                    "⚠️ لم أتمكن من تحديد رابط صالح\n"
+                    "الرجاء التأكد من إرسال رابط يبدأ بـ http:// أو https://"
+                )
                 return
+            
+            # إعلام المستخدم بالرابط الذي سيتم فحصه (بعد التنظيف)
+            if url != original_input.replace(" ", ""):
+                await update.message.reply_text(
+                    f"🔗 تم تعديل الرابط للفحص:\n{url}\n"
+                    "جاري التحليل الآن..."
+                )
+            else:
+                msg = await update.message.reply_text(f"🔍 جاري فحص الرابط:\n{url}...")
+            
+            # التحليل وإظهار النتائج
+            result = await analyze_url(url)
+            report = generate_url_report(result, url)
+            
+            if 'msg' in locals():
+                await msg.edit_text(report, parse_mode="Markdown", disable_web_page_preview=True)
+            else:
+                await update.message.reply_text(report, parse_mode="Markdown", disable_web_page_preview=True)
+            return
         
-        # إذا لم يكن رابط ولا ملف
-        await update.message.reply_text(
-            "⚠️ لم أتمكن من التعرف على الرابط أو الملف\n"
-            "الرجاء إرسال رابط صالح أو ملف مدعوم"
-        )
+        await update.message.reply_text("⚠️ الرجاء إرسال رابط صالح أو ملف مدعوم")
         
     except Exception as e:
-        print(f"Error: {str(e)}")
-        await update.message.reply_text(
-            "❌ حدث خطأ أثناء عملية الفحص\n"
-            "الرجاء المحاولة لاحقاً أو التأكد من صحة المدخلات"
+        print(f"Error in processing: {str(e)}")
+        error_msg = (
+            "❌ حدث خطأ أثناء الفحص\n"
+            "قد يكون بسبب:\n"
+            "- رابط غير صالح\n"
+            "- مشكلة في اتصال API\n"
+            "- محتوى غير مدعوم\n\n"
+            "الرجاء المحاولة لاحقاً أو إرسال رابط/ملف آخر"
         )
+        await update.message.reply_text(error_msg)
 
-# ================ تهيئة البوت ================
+# ================ تشغيل البوت ================
 def main():
     """الدالة الرئيسية لتشغيل البوت"""
     # تسجيل معالجات الأوامر
