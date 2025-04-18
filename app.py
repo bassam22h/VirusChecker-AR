@@ -10,6 +10,11 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 app = Flask(__name__)
 
+# تهيئة البوت والتطبيق في البداية
+bot = Bot(BOT_TOKEN)
+application = ApplicationBuilder().token(BOT_TOKEN).build()
+
+# أوامر البوت
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_message = """مرحبًا بك في **حارس الروابط**!
 
@@ -41,19 +46,11 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         reply = f"""**نتيجة فحص الرابط:**
 
-- ضار: {stats['malicious']}  
-(قد يحتوي على فيروسات، برمجيات تجسس، أو صفحات احتيال لسرقة بياناتك.)
-
-- مشبوه: {stats['suspicious']}  
-(نشاط غير مؤكد وقد يكون خطرًا. يُنصح بالحذر.)
-
-- آمن: {stats['harmless']}  
-(لا توجد مؤشرات تهديد.)
-
-- غير معروف: {stats['undetected']}  
-(لم يتم اكتشاف أي نشاط مريب حتى الآن.)
-
-- المجموع الكلي: {total}
+- ضار: {stats['malicious']}
+- مشبوه: {stats['suspicious']}
+- آمن: {stats['harmless']}
+- غير معروف: {stats['undetected']}
+- المجموع: {total}
 """
 
         if stats['malicious'] > 0 or stats['suspicious'] > 0:
@@ -63,12 +60,18 @@ async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("حدث خطأ أثناء الفحص. الرجاء المحاولة لاحقًا.")
 
+# ربط الأوامر
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), check_url))
+
+# استقبال الويب هوك من تيليجرام
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
     application.update_queue.put_nowait(update)
     return "ok", 200
 
+# تعيين Webhook
 @app.route('/setwebhook', methods=['GET'])
 def set_webhook():
     webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
@@ -78,13 +81,8 @@ def set_webhook():
     else:
         return "فشل تعيين Webhook", 400
 
+# تشغيل التطبيق
 if __name__ == '__main__':
-    bot = Bot(BOT_TOKEN)
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), check_url))
-
     application.run_webhook(
         listen="0.0.0.0",
         port=10000,
