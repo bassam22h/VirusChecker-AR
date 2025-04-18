@@ -3,17 +3,11 @@ import re
 import urllib.parse
 import requests
 import time
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    BotCommand
-)
+from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
     ContextTypes,
     filters
 )
@@ -29,16 +23,6 @@ PORT = int(os.environ.get("PORT", 10000))
 application = Application.builder().token(BOT_TOKEN).build()
 
 # ================ وظائف مساعدة ================
-def setup_commands():
-    """تهيئة أوامر البوت"""
-    commands = [
-        BotCommand("start", "بدء استخدام البوت"),
-        BotCommand("check", "فحص رابط أو ملف"),
-        BotCommand("help", "الحصول على المساعدة"),
-        BotCommand("safety_tips", "نصائح أمانية مهمة")
-    ]
-    return commands
-
 async def send_typing_action(update: Update):
     """إظهار مؤشر الكتابة"""
     try:
@@ -208,127 +192,32 @@ def generate_file_report(result: dict, file_name: str) -> str:
     
     return report
 
-# ================ معالجات الأوامر ================
+# ================ معالجة الرسائل ================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """بدء استخدام البوت"""
+    """رسالة البدء"""
     await send_typing_action(update)
-    
-    keyboard = [
-        [InlineKeyboardButton("📌 فحص رابط", callback_data="check_url")],
-        [InlineKeyboardButton("📁 فحص ملف", callback_data="check_file")],
-        [InlineKeyboardButton("🛡 نصائح أمانية", callback_data="safety_tips")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
     
     welcome_msg = """
-🛡 *مرحباً بك في بوت فحص الروابط والملفات المتقدم*
+🛡 *مرحباً بك في بوت فحص الروابط والملفات*
 
-يمكنني مساعدتك في:
-✓ فحص الروابط المشبوهة
-✓ تحليل الملفات الخطيرة
-✓ تقديم نصائح أمانية
+📌 *كيفية الاستخدام:*
+1. أرسل أي رابط مباشرة وسأفحصه لك
+2. أو أرسل ملفاً (حتى 50MB) وسأحلله
 
-استخدم الأزرار أدناه أو أرسل لي الرابط/الملف مباشرة.
+🔍 *الملفات المدعومة:*
+PDF, EXE, DOC, APK, ZIP وغيرها
+
+⚠️ *ملاحظة:* بعض الروابط قد يتم حظرها تلقائياً من تليجرام. في هذه الحالة جرب إرسال الرابط مع مسافات بين الأحرف.
 """
-    await update.message.reply_text(
-        welcome_msg,
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text(welcome_msg, parse_mode="Markdown")
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """مساعدة المستخدم"""
-    await send_typing_action(update)
-    
-    help_msg = """
-📌 *كيفية استخدام البوت:*
-
-1. *فحص رابط:*
-   - أرسل الرابط مباشرة
-   - أو استخدم /check مع الرابط
-   - مثال: /check https://example.com
-
-2. *فحص ملف:*
-   - أرسل الملف مباشرة (حتى 32MB)
-   - الأنواع المدعومة: exe, pdf, doc, zip, apk وغيرها
-
-3. *الأوامر المتاحة:*
-   - /start - بدء البوت
-   - /check - فحص رابط أو ملف
-   - /safety_tips - نصائح أمانية
-   - /help - عرض هذه المساعدة
-
-🛡 *ملاحظة:* بعض الروابط قد يتم حظرها تلقائياً من تليجرام.
-"""
-    await update.message.reply_text(help_msg, parse_mode="Markdown")
-
-async def safety_tips(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نصائح أمانية"""
-    await send_typing_action(update)
-    
-    tips = """
-🔐 *نصائح أمانية مهمة:*
-
-1. *الروابط المشبوهة:*
-   - لا تفتح روابط من مصادر غير موثوقة
-   - انتبه للروابط القصيرة (مثل bit.ly)
-   - تحقق من كتابة اسم الموقع (مثال: faceb00k.com)
-
-2. *الملفات الخطيرة:*
-   - لا تشغل ملفات من مصادر غير معروفة
-   - تأكد من امتداد الملف (قد يكون file.pdf.exe)
-   - استخدم متصفحات محدثة وبرامج مكافحة فيروسات
-
-3. *الحماية العامة:*
-   - استخدم كلمات مرور قوية ومختلفة
-   - فعّل المصادقة الثنائية
-   - احذر من رسائل التصيد الاحتيالي
-
-💡 تذكر: لا يوجد نظام أمان مثالي، كن حذراً دائماً!
-"""
-    await update.message.reply_text(tips, parse_mode="Markdown")
-
-async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """فحص رابط أو ملف باستخدام الأمر"""
-    await send_typing_action(update)
-    
-    if not context.args:
-        await update.message.reply_text(
-            "⚠️ يرجى تحديد رابط أو ملف للفحص\n"
-            "مثال: /check https://example.com"
-        )
-        return
-    
-    input_text = " ".join(context.args)
-    await process_input(update, input_text)
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة ضغطات الأزرار"""
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data == "check_url":
-        await query.edit_message_text(
-            "📤 أرسل الرابط الذي تريد فحصه\n"
-            "يمكنك إرساله مباشرة أو مع مسافات بين الأحرف",
-            parse_mode="Markdown"
-        )
-    elif query.data == "check_file":
-        await query.edit_message_text(
-            "📁 أرسل الملف الذي تريد فحصه\n"
-            "الحد الأقصى للحجم: 32MB\n"
-            "الأنواع المدعومة: exe, pdf, doc, zip, apk وغيرها",
-            parse_mode="Markdown"
-        )
-    elif query.data == "safety_tips":
-        await safety_tips(update, context)
-
-# ================ معالجة المدخلات ================
-async def process_input(update: Update, input_data: str):
+async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة المدخلات من المستخدم"""
     try:
+        await send_typing_action(update)
+        
         # إذا كان ملف
-        if hasattr(update.message, 'document'):
+        if update.message.document:
             file = await update.message.document.get_file()
             file_content = BytesIO(await file.download_as_bytearray())
             file_name = update.message.document.file_name
@@ -353,26 +242,27 @@ async def process_input(update: Update, input_data: str):
             await msg.edit_text(report, parse_mode="Markdown")
             return
         
-        # إذا كان رابط
-        url = extract_url(input_data)
-        if url:
-            # إعلام المستخدم ببدء الفحص
-            msg = await update.message.reply_text(f"🔍 جاري فحص الرابط:\n{url}...")
-            
-            # تحليل الرابط
-            result = await analyze_url(url)
-            
-            # إنشاء التقرير
-            report = generate_url_report(result, url)
-            
-            # إرسال النتائج
-            await msg.edit_text(report, parse_mode="Markdown")
-            return
+        # إذا كان نص (رابط محتمل)
+        if update.message.text:
+            url = extract_url(update.message.text)
+            if url:
+                # إعلام المستخدم ببدء الفحص
+                msg = await update.message.reply_text(f"🔍 جاري فحص الرابط:\n{url}...")
+                
+                # تحليل الرابط
+                result = await analyze_url(url)
+                
+                # إنشاء التقرير
+                report = generate_url_report(result, url)
+                
+                # إرسال النتائج
+                await msg.edit_text(report, parse_mode="Markdown")
+                return
         
         # إذا لم يكن رابط ولا ملف
         await update.message.reply_text(
             "⚠️ لم أتمكن من التعرف على الرابط أو الملف\n"
-            "الرجاء التأكد من إرسال رابط صالح أو ملف مدعوم"
+            "الرجاء إرسال رابط صالح أو ملف مدعوم"
         )
         
     except Exception as e:
@@ -387,22 +277,12 @@ def main():
     """الدالة الرئيسية لتشغيل البوت"""
     # تسجيل معالجات الأوامر
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("check", check_command))
-    application.add_handler(CommandHandler("safety_tips", safety_tips))
     
-    # معالجة الرسائل العادية
+    # معالجة الرسائل النصية
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_input))
     
     # معالجة الملفات
     application.add_handler(MessageHandler(filters.Document.ALL, process_input))
-    
-    # معالجة ضغطات الأزرار
-    application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # تهيئة أوامر القائمة
-    commands = setup_commands()
-    application.bot.set_my_commands(commands)
     
     print("✅ البوت يعمل...")
     application.run_webhook(
