@@ -1,31 +1,30 @@
 import os
 import requests
-import asyncio
 from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# اقرأ المتغيرات من بيئة Render
+import asyncio
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-# إعداد البوت
 application = Application.builder().token(BOT_TOKEN).build()
 bot = Bot(BOT_TOKEN)
 
-# نص ترحيبي
+# أمر /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "مرحبًا بك في بوت فحص الروابط الضارة!\n\n"
-        "أرسل لي أي رابط، وسأفحصه لك عبر VirusTotal وأعطيك النتيجة."
+        "مرحبًا بك في بوت فحص الروابط!\n\n"
+        "أرسل لي أي رابط الآن، وسأفحصه لك باستخدام VirusTotal."
     )
 
-# فحص الرابط
+# أمر فحص الروابط
 async def check_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     if not url.startswith("http"):
-        await update.message.reply_text("من فضلك أرسل رابطًا صحيحًا يبدأ بـ https:// أو http://")
+        await update.message.reply_text("أرسل رابطًا يبدأ بـ http أو https.")
         return
 
     headers = {
@@ -36,7 +35,7 @@ async def check_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data=params)
 
     if response.status_code != 200:
-        await update.message.reply_text("حدث خطأ أثناء إرسال الرابط للتحليل. حاول لاحقًا.")
+        await update.message.reply_text("حدث خطأ أثناء الفحص. حاول لاحقًا.")
         return
 
     analysis_id = response.json()["data"]["id"]
@@ -45,7 +44,7 @@ async def check_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result_response = requests.get(analysis_url, headers=headers)
 
     if result_response.status_code != 200:
-        await update.message.reply_text("تعذر جلب نتيجة الفحص. حاول لاحقًا.")
+        await update.message.reply_text("تعذر جلب النتيجة. حاول لاحقًا.")
         return
 
     result_data = result_response.json()
@@ -55,30 +54,31 @@ async def check_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if malicious > 0:
         await update.message.reply_text(
             f"تم فحص الرابط:\n{url}\n\n"
-            f"نتيجة الفحص:\n"
-            f"- خطير: {malicious} جهة حددته كمضر.\n\n"
-            "**تحذير:** هذا الرابط قد يؤدي إلى برامج ضارة، فيروسات، أو محاولات تصيّد. لا تقم بفتحه."
+            f"عدد التحذيرات: {malicious}\n"
+            "**تحذير:** قد يكون هذا الرابط خطيرًا أو يحتوي على برمجيات خبيثة."
         )
     else:
         await update.message.reply_text(
             f"تم فحص الرابط:\n{url}\n\n"
-            "الرابط آمن حاليًا وفقًا لفحص VirusTotal."
+            "لا توجد تحذيرات حاليًا — الرابط آمن حسب VirusTotal."
         )
 
-# إعداد الأوامر والمستمع
+# إعداد الهاندلرز
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_link))
 
-# تهيئة Webhook بشكل Async
-async def setup_webhook():
+# Main function
+async def main():
     await bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
     print(f"تم تعيين Webhook بنجاح: {WEBHOOK_URL}/{BOT_TOKEN}")
-
-# تشغيل البوت مع Webhook
-if __name__ == '__main__':
-    asyncio.run(setup_webhook())
-    application.run_webhook(
+    await application.start()
+    await application.updater.start_webhook(
         listen="0.0.0.0",
         port=10000,
-        webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
+        url_path=BOT_TOKEN
     )
+    await application.updater.idle()
+
+# تشغيل البوت
+if __name__ == '__main__':
+    asyncio.run(main())
