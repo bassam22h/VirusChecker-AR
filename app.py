@@ -8,7 +8,6 @@ from telegram.ext import (
     filters,
     ContextTypes
 )
-import asyncio
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY")
@@ -69,17 +68,19 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_link))
 
 # تشغيل البوت
-async def main():
-    await application.bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
-    print(f"تم تعيين Webhook بنجاح: {WEBHOOK_URL}/{BOT_TOKEN}")
+def main():
+    # يمكنك استخدام webhook أو polling حسب احتياجاتك
     
-    # تشغيل التطبيق باستخدام webhook
-    await application.run_webhook(
+    # الخيار 1: استخدام webhook (مفضل لـ Render)
+    application.run_webhook(
         listen="0.0.0.0",
         port=10000,
         url_path=BOT_TOKEN,
         webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
     )
+    
+    # الخيار 2: استخدام polling (للتجربة المحلية)
+    # application.run_polling()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
