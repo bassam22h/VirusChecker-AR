@@ -3,6 +3,7 @@ import re
 import urllib.parse
 import requests
 import time
+from check_subscription import setup_subscription_handlers, check_subscription_middleware
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -21,6 +22,8 @@ PORT = int(os.environ.get("PORT", 10000))
 
 # إنشاء التطبيق
 application = Application.builder().token(BOT_TOKEN).build()
+
+setup_subscription_handlers(application)
 
 # ================ وظائف مساعدة ================
 async def send_typing_action(update: Update):
@@ -272,13 +275,22 @@ async def process_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     """الدالة الرئيسية لتشغيل البوت"""
     # تسجيل معالجات الأوامر
-    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler(
+    "start",
+    lambda update, context: check_subscription_middleware(update, context, start)
+))
     
     # معالجة الرسائل النصية
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_input))
+    application.add_handler(MessageHandler(
+    filters.TEXT & ~filters.COMMAND,
+    lambda update, context: check_subscription_middleware(update, context, process_input)
+))
     
     # معالجة الملفات
-    application.add_handler(MessageHandler(filters.Document.ALL, process_input))
+    application.add_handler(MessageHandler(
+    filters.Document.ALL,
+    lambda update, context: check_subscription_middleware(update, context, process_input)
+))
     
     print("✅ البوت يعمل...")
     application.run_webhook(
