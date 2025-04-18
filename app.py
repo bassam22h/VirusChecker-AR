@@ -1,16 +1,21 @@
 import os
 import requests
-from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes
+)
 import asyncio
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
+# إنشاء التطبيق
 application = Application.builder().token(BOT_TOKEN).build()
-bot = Bot(BOT_TOKEN)
 
 # أمر /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -26,9 +31,7 @@ async def check_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("أرسل رابطًا يبدأ بـ http أو https.")
         return
 
-    headers = {
-        "x-apikey": VIRUSTOTAL_API_KEY
-    }
+    headers = {"x-apikey": VIRUSTOTAL_API_KEY}
     params = {'url': url}
 
     response = requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data=params)
@@ -38,7 +41,6 @@ async def check_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     analysis_id = response.json()["data"]["id"]
-
     analysis_url = f"https://www.virustotal.com/api/v3/analyses/{analysis_id}"
     result_response = requests.get(analysis_url, headers=headers)
 
@@ -66,18 +68,18 @@ async def check_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_link))
 
-# Main function
+# تشغيل البوت
 async def main():
-    await bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
+    await application.bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
     print(f"تم تعيين Webhook بنجاح: {WEBHOOK_URL}/{BOT_TOKEN}")
-    await application.start()
-    await application.updater.start_webhook(
+    
+    # تشغيل التطبيق باستخدام webhook
+    await application.run_webhook(
         listen="0.0.0.0",
         port=10000,
-        url_path=BOT_TOKEN
+        url_path=BOT_TOKEN,
+        webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
     )
-    await application.updater.idle()
 
-# تشغيل البوت
 if __name__ == '__main__':
     asyncio.run(main())
