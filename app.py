@@ -1,22 +1,16 @@
 import os
 import requests
 from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram import Update, Bot
+from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# إعدادات من متغيرات البيئة
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 VIRUSTOTAL_API_KEY = os.getenv("VT_API_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# تيليجرام بوت
-bot = Bot(BOT_TOKEN)
 app = Flask(__name__)
 
-# Dispatcher
-dispatcher = Dispatcher(bot=bot, update_queue=None, workers=4)
-
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_message = """مرحبًا بك في **حارس الروابط**!
 
 أنا بوت متخصص في فحص الروابط والتأكد من سلامتها باستخدام خدمة VirusTotal.
@@ -28,16 +22,13 @@ def start(update: Update, context: CallbackContext):
 - أو غير معروف بعد
 
 احمِ نفسك قبل الضغط على أي رابط!"""
-    update.message.reply_text(welcome_message, parse_mode="Markdown")
+    await update.message.reply_text(welcome_message, parse_mode="Markdown")
 
-def check_url(update: Update, context: CallbackContext):
+async def check_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
-    headers = {
-        "x-apikey": VIRUSTOTAL_API_KEY
-    }
-    data = {
-        "url": url
-    }
+    headers = {"x-apikey": VIRUSTOTAL_API_KEY}
+    data = {"url": url}
+
     response = requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data=data)
 
     if response.status_code == 200:
@@ -65,26 +56,19 @@ def check_url(update: Update, context: CallbackContext):
 - المجموع الكلي: {total}
 """
 
-        # إضافة التحذير في حال وجود تهديد
         if stats['malicious'] > 0 or stats['suspicious'] > 0:
             reply += "\n⚠️ **تحذير: هذا الرابط قد يشكل خطرًا على بياناتك وجهازك!**"
 
-        update.message.reply_text(reply, parse_mode="Markdown")
+        await update.message.reply_text(reply, parse_mode="Markdown")
     else:
-        update.message.reply_text("حدث خطأ أثناء الفحص. الرجاء المحاولة لاحقًا.")
+        await update.message.reply_text("حدث خطأ أثناء الفحص. الرجاء المحاولة لاحقًا.")
 
-# Handlers
-dispatcher.add_handler(CommandHandler("start", start))
-dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_url))
-
-# Webhook endpoint
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot)
-    dispatcher.process_update(update)
+    application.update_queue.put_nowait(update)
     return "ok", 200
 
-# تعيين Webhook
 @app.route('/setwebhook', methods=['GET'])
 def set_webhook():
     webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
@@ -95,4 +79,14 @@ def set_webhook():
         return "فشل تعيين Webhook", 400
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=10000)
+    bot = Bot(BOT_TOKEN)
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), check_url))
+
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=10000,
+        webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
+    )
